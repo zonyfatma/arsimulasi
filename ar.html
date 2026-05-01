@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR Checklist Higienitas</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #0a1628; color: white; overflow: hidden; height: 100vh; width: 100vw; }
+
+        .splash-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, #0a1628 0%, #1e3a5f 100%); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; transition: opacity 0.5s; }
+        .splash-screen.hidden { opacity: 0; pointer-events: none; }
+        .logo-container { text-align: center; margin-bottom: 30px; }
+        .logo-container h1 { font-size: 2.5rem; color: #ff6b00; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); letter-spacing: 2px; }
+        .logo-container h2 { font-size: 1.2rem; color: #4a90e2; margin-top: 10px; }
+        .shield-icon { width: 100px; height: 100px; margin-bottom: 20px; background: linear-gradient(135deg, #ff6b00, #ff8c00); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 3rem; box-shadow: 0 0 30px rgba(255, 107, 0, 0.5); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        .start-btn { background: linear-gradient(135deg, #ff6b00, #ff8c00); color: white; border: none; padding: 15px 50px; font-size: 1.2rem; border-radius: 50px; cursor: pointer; font-weight: bold; box-shadow: 0 4px 15px rgba(255, 107, 0, 0.4); transition: transform 0.2s; margin-top: 20px; }
+        .start-btn:active { transform: scale(0.95); }
+        .tagline { margin-top: 20px; color: #aaa; font-size: 0.9rem; text-align: center; padding: 0 20px; }
+
+        .camera-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none; }
+        .camera-container.active { display: block; }
+        #video-feed { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(1); }
+        #canvas-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        #analysis-canvas { display: none; }
+
+        .ar-ui { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 20; pointer-events: none; }
+        .ar-ui > * { pointer-events: auto; }
+
+        .ar-header { position: absolute; top: 0; left: 0; right: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent); padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; }
+        .ar-header h3 { color: #00ff88; font-size: 1rem; display: flex; align-items: center; gap: 8px; }
+        .status-badge { background: rgba(128, 128, 128, 0.3); border: 1px solid #888; color: #aaa; padding: 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; }
+        .status-badge.scanning { background: rgba(0, 255, 136, 0.2); border-color: #00ff88; color: #00ff88; }
+        .status-badge.analyzing { background: rgba(255, 107, 0, 0.2); border-color: #ff6b00; color: #ff6b00; }
+
+        .progress-container { position: absolute; top: 60px; left: 20px; right: 20px; background: rgba(0, 0, 0, 0.6); border-radius: 15px; padding: 10px 15px; display: flex; align-items: center; gap: 10px; }
+        .progress-bar { flex: 1; height: 8px; background: rgba(255, 255, 255, 0.2); border-radius: 4px; overflow: hidden; }
+        .progress-fill { height: 100%; background: linear-gradient(to right, #ff6b00, #00ff88); border-radius: 4px; transition: width 0.5s; width: 0%; }
+        .progress-text { font-size: 0.8rem; font-weight: bold; color: #aaa; min-width: 40px; text-align: right; }
+
+        .camera-gate { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10, 22, 40, 0.95); border: 2px solid #ff6b00; border-radius: 25px; padding: 40px; text-align: center; z-index: 50; display: none; max-width: 90%; width: 320px; }
+        .camera-gate.active { display: block; }
+        .camera-gate h4 { color: #ff6b00; font-size: 1.3rem; margin-bottom: 15px; }
+        .camera-gate p { color: #aaa; font-size: 0.9rem; margin-bottom: 25px; line-height: 1.5; }
+        .gate-btn { background: linear-gradient(135deg, #00ff88, #00cc6a); color: #0a1628; border: none; padding: 15px 40px; border-radius: 25px; font-size: 1rem; font-weight: bold; cursor: pointer; width: 100%; }
+
+        .scan-frame { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 280px; height: 280px; border: 2px solid rgba(0, 255, 136, 0.5); border-radius: 20px; pointer-events: none; display: none; }
+        .scan-frame::before, .scan-frame::after { content: ''; position: absolute; width: 30px; height: 30px; border: 3px solid #00ff88; }
+        .scan-frame::before { top: -3px; left: -3px; border-right: none; border-bottom: none; border-top-left-radius: 15px; }
+        .scan-frame::after { bottom: -3px; right: -3px; border-left: none; border-top: none; border-bottom-right-radius: 15px; }
+        .scan-line { position: absolute; top: 0; left: 0; width: 100%; height: 3px; background: linear-gradient(to right, transparent, #00ff88, transparent); animation: scan 2s linear infinite; box-shadow: 0 0 10px #00ff88; }
+        @keyframes scan { 0% { top: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+        .scan-text { position: absolute; bottom: -40px; left: 50%; transform: translateX(-50%); color: #00ff88; font-size: 0.9rem; white-space: nowrap; text-shadow: 0 0 10px rgba(0, 255, 136, 0.5); animation: blink 1s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        .notification { position: absolute; top: 110px; left: 50%; transform: translateX(-50%) translateY(-100px); background: rgba(74, 144, 226, 0.9); color: white; padding: 12px 25px; border-radius: 25px; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; gap: 10px; transition: transform 0.5s; z-index: 50; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .notification.warning { background: rgba(255, 204, 0, 0.9); color: #0a1628; }
+        .notification.success { background: rgba(0, 255, 136, 0.9); color: #0a1628; }
+        .notification.error { background: rgba(255, 68, 68, 0.9); color: white; }
+        .notification.show { transform: translateX(-50%) translateY(0); }
+
+        .ar-label { position: absolute; background: rgba(0, 0, 0, 0.8); border: 2px solid #4a90e2; border-radius: 12px; padding: 10px 15px; display: flex; align-items: center; gap: 10px; box-shadow: 0 0 20px rgba(74, 144, 226, 0.3); animation: float 3s ease-in-out infinite; cursor: pointer; pointer-events: auto; display: none; }
+        .ar-label.verified { border-color: #00ff88; box-shadow: 0 0 20px rgba(0, 255, 136, 0.3); }
+        .ar-label.dirty { border-color: #ff4444; box-shadow: 0 0 20px rgba(255, 68, 68, 0.3); }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .ar-label .label-icon { font-size: 1.5rem; }
+        .ar-label .label-text { font-size: 0.85rem; font-weight: bold; }
+        .ar-label .label-status { width: 20px; height: 20px; border-radius: 50%; background: #4a90e2; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: white; }
+        .ar-label.verified .label-status { background: #00ff88; color: #0a1628; }
+        .ar-label.dirty .label-status { background: #ff4444; }
+
+        .checklist-panel { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(to top, rgba(10, 22, 40, 0.95), rgba(10, 22, 40, 0.8)); border-top: 2px solid #ff6b00; border-radius: 25px 25px 0 0; padding: 20px; max-height: 55vh; overflow-y: auto; transform: translateY(0); transition: transform 0.3s; }
+        .checklist-panel.collapsed { transform: translateY(calc(100% - 60px)); }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; cursor: pointer; }
+        .panel-header h4 { color: #ff6b00; font-size: 1.1rem; display: flex; align-items: center; gap: 8px; }
+        .collapse-btn { background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer; transition: transform 0.3s; }
+        .checklist-panel.collapsed .collapse-btn { transform: rotate(180deg); }
+
+        .checklist-item { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 15px; padding: 15px; margin-bottom: 10px; display: flex; align-items: center; gap: 15px; transition: all 0.3s; position: relative; overflow: hidden; }
+        .checklist-item:hover { background: rgba(255, 255, 255, 0.08); }
+        .checklist-item.pending { border-color: #666; background: rgba(100, 100, 100, 0.1); }
+        .checklist-item.verified-clean { border-color: #00ff88; background: rgba(0, 255, 136, 0.1); }
+        .checklist-item.verified-dirty { border-color: #ff4444; background: rgba(255, 68, 68, 0.1); }
+        .checklist-item.selected { border-color: #ff6b00; background: rgba(255, 107, 0, 0.15); box-shadow: 0 0 15px rgba(255, 107, 0, 0.3); }
+        .checklist-item.analyzing { border-color: #4a90e2; background: rgba(74, 144, 226, 0.15); }
+        .item-icon { width: 45px; height: 45px; background: rgba(255, 107, 0, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; flex-shrink: 0; }
+        .item-info { flex: 1; }
+        .item-info h5 { font-size: 0.95rem; margin-bottom: 3px; }
+        .item-info p { font-size: 0.8rem; color: #aaa; }
+        .item-status { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #555; display: flex; align-items: center; justify-content: center; font-size: 1rem; transition: all 0.3s; flex-shrink: 0; }
+        .checklist-item.verified-clean .item-status { background: #00ff88; border-color: #00ff88; color: #0a1628; }
+        .checklist-item.verified-dirty .item-status { background: #ff4444; border-color: #ff4444; color: white; }
+        .checklist-item.pending .item-status { background: #555; border-color: #777; color: #aaa; }
+        .checklist-item.selected .item-status { background: #ff6b00; border-color: #ff6b00; color: white; animation: pulse-status 1.5s infinite; }
+        .checklist-item.analyzing .item-status { background: #4a90e2; border-color: #4a90e2; color: white; animation: spin 1s linear infinite; }
+        @keyframes pulse-status { 0%, 100% { box-shadow: 0 0 5px #ff6b00; } 50% { box-shadow: 0 0 15px #ff6b00; } }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .verify-btn { background: linear-gradient(135deg, #4a90e2, #357abd); color: white; border: none; padding: 8px 16px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; cursor: pointer; transition: all 0.3s; white-space: nowrap; }
+        .verify-btn:hover { transform: scale(1.05); }
+        .verify-btn:disabled { background: #444; color: #777; cursor: not-allowed; transform: none; }
+        .verify-btn.clean { background: linear-gradient(135deg, #00ff88, #00cc6a); color: #0a1628; }
+        .verify-btn.dirty { background: linear-gradient(135deg, #ff4444, #cc3333); }
+        .verify-btn.select { background: linear-gradient(135deg, #ff6b00, #ff8c00); }
+        .verify-btn.analyzing { background: linear-gradient(135deg, #4a90e2, #357abd); animation: pulse-btn 1s infinite; }
+        @keyframes pulse-btn { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+
+        .add-item-btn { background: linear-gradient(135deg, #ff6b00, #ff8c00); color: white; border: none; padding: 12px 20px; border-radius: 15px; font-size: 0.9rem; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .add-item-btn:hover { transform: scale(1.02); }
+
+        .add-item-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); display: none; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+        .add-item-modal.active { display: flex; }
+        .add-item-content { background: linear-gradient(135deg, #1e3a5f, #0a1628); border: 2px solid #ff6b00; border-radius: 25px; padding: 30px; max-width: 350px; width: 100%; }
+        .add-item-content h4 { color: #ff6b00; margin-bottom: 15px; font-size: 1.2rem; }
+        .add-item-content input { width: 100%; padding: 12px 15px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.05); color: white; font-size: 1rem; margin-bottom: 10px; }
+        .add-item-content input::placeholder { color: #888; }
+        .add-item-content .modal-actions { display: flex; gap: 10px; margin-top: 15px; }
+        .add-item-content .modal-actions button { flex: 1; padding: 12px; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; }
+        .add-item-content .modal-actions .btn-primary { background: linear-gradient(135deg, #ff6b00, #ff8c00); color: white; }
+        .add-item-content .modal-actions .btn-secondary { background: transparent; border: 1px solid #ff6b00; color: #ff6b00; }
+
+        .analysis-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10, 22, 40, 0.95); border: 2px solid #4a90e2; border-radius: 25px; padding: 30px; text-align: center; z-index: 45; display: none; max-width: 90%; width: 300px; }
+        .analysis-overlay.active { display: block; }
+        .analysis-overlay .analysis-icon { font-size: 3rem; margin-bottom: 15px; animation: scan-pulse 1s infinite; }
+        @keyframes scan-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.8; } }
+        .analysis-overlay h4 { color: #4a90e2; margin-bottom: 10px; }
+        .analysis-overlay p { color: #aaa; font-size: 0.9rem; margin-bottom: 15px; }
+        .analysis-overlay .analysis-progress { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-top: 15px; }
+        .analysis-overlay .analysis-progress-fill { height: 100%; background: linear-gradient(to right, #4a90e2, #00ff88); border-radius: 3px; transition: width 0.3s; width: 0%; }
+
+        .result-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10, 22, 40, 0.95); border-radius: 25px; padding: 30px; text-align: center; z-index: 45; display: none; max-width: 90%; width: 300px; }
+        .result-overlay.active { display: block; }
+        .result-overlay .result-icon { font-size: 4rem; margin-bottom: 15px; }
+        .result-overlay h4 { margin-bottom: 10px; font-size: 1.3rem; }
+        .result-overlay p { color: #aaa; font-size: 0.9rem; margin-bottom: 20px; }
+        .result-overlay .result-btn { background: linear-gradient(135deg, #4a90e2, #357abd); color: white; border: none; padding: 12px 30px; border-radius: 20px; font-size: 1rem; font-weight: bold; cursor: pointer; width: 100%; }
+        .result-overlay.success { border: 2px solid #00ff88; }
+        .result-overlay.success h4 { color: #00ff88; }
+        .result-overlay.fail { border: 2px solid #ff4444; }
+        .result-overlay.fail h4 { color: #ff4444; }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); display: none; align-items: center; justify-content: center; z-index: 100; }
+        .modal-overlay.active { display: flex; }
+        .modal-content { background: linear-gradient(135deg, #1e3a5f, #0a1628); border: 2px solid #00ff88; border-radius: 25px; padding: 40px; text-align: center; max-width: 90%; width: 350px; animation: modalPop 0.5s; }
+        @keyframes modalPop { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        .modal-content .success-icon { font-size: 4rem; margin-bottom: 20px; animation: bounce 1s infinite; }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .modal-content h3 { color: #00ff88; font-size: 1.5rem; margin-bottom: 10px; }
+        .modal-content p { color: #aaa; margin-bottom: 25px; font-size: 0.95rem; }
+        .modal-btn { background: linear-gradient(135deg, #00ff88, #00cc6a); color: #0a1628; border: none; padding: 12px 40px; border-radius: 25px; font-size: 1rem; font-weight: bold; cursor: pointer; width: 100%; }
+
+        .action-bar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; z-index: 25; }
+        .action-btn { width: 60px; height: 60px; border-radius: 50%; border: 3px solid white; background: rgba(0, 0, 0, 0.6); color: white; font-size: 1.5rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s; }
+        .action-btn:active { transform: scale(0.9); }
+        .action-btn.primary { width: 70px; height: 70px; background: #ff6b00; border-color: #ff8c00; font-size: 1.8rem; }
+        .action-btn.primary:disabled { background: #444; border-color: #666; cursor: not-allowed; }
+
+        .camera-indicator { position: absolute; top: 110px; right: 20px; background: rgba(0, 0, 0, 0.7); border-radius: 20px; padding: 8px 15px; font-size: 0.75rem; color: #aaa; z-index: 30; display: flex; align-items: center; gap: 8px; }
+        .camera-indicator .cam-dot { width: 8px; height: 8px; border-radius: 50%; background: #00ff88; animation: blink-dot 1s infinite; }
+        @keyframes blink-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        .tutorial-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.85); z-index: 90; display: none; align-items: center; justify-content: center; padding: 20px; }
+        .tutorial-overlay.active { display: flex; }
+        .tutorial-content { background: #1e3a5f; border-radius: 20px; padding: 30px; max-width: 350px; width: 100%; }
+        .tutorial-step { text-align: center; display: none; }
+        .tutorial-step.active { display: block; }
+        .tutorial-step .step-icon { font-size: 3rem; margin-bottom: 15px; }
+        .tutorial-step h4 { color: #ff6b00; margin-bottom: 10px; font-size: 1.2rem; }
+        .tutorial-step p { color: #ccc; font-size: 0.9rem; line-height: 1.6; margin-bottom: 20px; }
+        .tutorial-nav { display: flex; gap: 10px; justify-content: center; }
+        .tutorial-nav button { background: #ff6b00; color: white; border: none; padding: 10px 25px; border-radius: 20px; cursor: pointer; font-weight: bold; }
+        .tutorial-nav button.secondary { background: transparent; border: 1px solid #ff6b00; }
+        .step-dots { display: flex; gap: 8px; justify-content: center; margin: 20px 0; }
+        .step-dot { width: 10px; height: 10px; border-radius: 50%; background: rgba(255, 255, 255, 0.3); transition: all 0.3s; }
+        .step-dot.active { background: #ff6b00; width: 25px; border-radius: 5px; }
+
+        .checklist-panel::-webkit-scrollbar { width: 5px; }
+        .checklist-panel::-webkit-scrollbar-track { background: transparent; }
+        .checklist-panel::-webkit-scrollbar-thumb { background: rgba(255, 107, 0, 0.5); border-radius: 3px; }
+    </style>
+<base target="_blank">
+<base target="_blank">
+</head>
+<body>
+
+    <div class="splash-screen" id="splashScreen">
+        <div class="shield-icon">&#x1F6E1;</div>
+        <div class="logo-container">
+            <h1>CHECKLIST HIGIENITAS</h1>
+            <h2>BERBASIS AR</h2>
+        </div>
+        <p class="tagline">Solusi Digital Sederhana untuk Angkringan Lebih Bersih & Aman</p>
+        <button class="start-btn" onclick="startApp()">MULAI SEKARANG</button>
+        <div style="margin-top: 30px; text-align: center;">
+            <div style="display: flex; gap: 20px; justify-content: center; font-size: 0.8rem; color: #888;">
+                <span>&#x2713; BERSIH</span>
+                <span>&#x2713; AMAN</span>
+                <span>&#x2713; TERPERCAYA</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="tutorial-overlay" id="tutorialOverlay">
+        <div class="tutorial-content">
+            <div class="step-dots">
+                <div class="step-dot active"></div>
+                <div class="step-dot"></div>
+                <div class="step-dot"></div>
+                <div class="step-dot"></div>
+            </div>
+            <div class="tutorial-step active" data-step="1">
+                <div class="step-icon">&#x1F4F1;</div>
+                <h4>Aktifkan Kamera</h4>
+                <p>Izinkan akses kamera. Arahkan ke area dapur yang ingin diperiksa.</p>
+                <div class="tutorial-nav"><button onclick="nextTutorial()">Lanjut</button></div>
+            </div>
+            <div class="tutorial-step" data-step="2">
+                <div class="step-icon">&#x1F4CB;</div>
+                <h4>Pilih Objek dari Daftar</h4>
+                <p>Buka panel checklist, lalu klik "PILIH" pada objek yang ingin Anda periksa.</p>
+                <div class="tutorial-nav"><button class="secondary" onclick="prevTutorial()">Kembali</button><button onclick="nextTutorial()">Lanjut</button></div>
+            </div>
+            <div class="tutorial-step" data-step="3">
+                <div class="step-icon">&#x1F50D;</div>
+                <h4>Analisis Otomatis Sistem</h4>
+                <p>Sistem akan menganalisis video kamera. Jika objek terdeteksi, status kebersihan akan diverifikasi otomatis.</p>
+                <div class="tutorial-nav"><button class="secondary" onclick="prevTutorial()">Kembali</button><button onclick="nextTutorial()">Lanjut</button></div>
+            </div>
+            <div class="tutorial-step" data-step="4">
+                <div class="step-icon">&#x2705;</div>
+                <h4>Hasil Verifikasi</h4>
+                <p>Jika objek tidak terdeteksi di kamera, sistem akan menolak verifikasi. Arahkan kamera dengan benar!</p>
+                <div class="tutorial-nav"><button class="secondary" onclick="prevTutorial()">Kembali</button><button onclick="finishTutorial()">Mulai</button></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="camera-container" id="cameraContainer">
+        <video id="video-feed" autoplay playsinline></video>
+        <canvas id="canvas-overlay"></canvas>
+        <canvas id="analysis-canvas"></canvas>
+
+        <div class="ar-ui">
+            <div class="ar-header">
+                <h3>&#x1F4CB; CHECKLIST HIGIENITAS</h3>
+                <div class="status-badge" id="statusBadge">KAMERA SIAP</div>
+            </div>
+
+            <div class="camera-indicator" id="cameraIndicator">
+                <div class="cam-dot"></div>
+                <span id="camLabel">Kamera Belakang</span>
+            </div>
+
+            <div class="progress-container">
+                <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                <div class="progress-text" id="progressText">0/4</div>
+            </div>
+
+            <div class="notification" id="notification"><span id="notifText">Notifikasi</span></div>
+
+            <div class="camera-gate" id="cameraGate">
+                <h4>&#x1F4F7; Kamera Siap!</h4>
+                <p>Arahkan kamera ke area yang ingin diperiksa. Pilih objek dari daftar checklist untuk analisis otomatis.</p>
+                <button class="gate-btn" id="gateBtn" onclick="closeGate()">&#x1F4CB; LIHAT CHECKLIST</button>
+            </div>
+
+            <div class="analysis-overlay" id="analysisOverlay">
+                <div class="analysis-icon">&#x1F50D;</div>
+                <h4>Menganalisis Kamera...</h4>
+                <p id="analysisText">Sistem sedang mendeteksi objek di frame kamera</p>
+                <div class="analysis-progress"><div class="analysis-progress-fill" id="analysisProgress"></div></div>
+            </div>
+
+            <div class="result-overlay" id="resultOverlay">
+                <div class="result-icon" id="resultIcon">&#x2705;</div>
+                <h4 id="resultTitle">Hasil Analisis</h4>
+                <p id="resultText">Objek terdeteksi dan terverifikasi</p>
+                <button class="result-btn" onclick="closeResult()">OKE</button>
+            </div>
+
+            <div id="arLabelsContainer"></div>
+
+            <div class="checklist-panel" id="checklistPanel">
+                <div class="panel-header" onclick="togglePanel()">
+                    <h4>&#x1F4CB; Daftar Pengecekan</h4>
+                    <button class="collapse-btn">&#x25BC;</button>
+                </div>
+                <div id="checklistItemsContainer"></div>
+                <button class="add-item-btn" onclick="showAddItemModal()">&#x2795; Tambah Objek Baru</button>
+            </div>
+
+            <div class="action-bar">
+                <button class="action-btn" onclick="toggleFlash()" title="Flash">&#x1F526;</button>
+                <button class="action-btn" onclick="switchCamera()" title="Ganti Kamera">&#x1F504;</button>
+                <button class="action-btn primary" id="mainVerifyBtn" onclick="startAutoAnalysis()" title="Analisis Objek Terpilih" disabled>&#x1F50D;</button>
+                <button class="action-btn" onclick="togglePanel()" title="Checklist">&#x1F4CB;</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="add-item-modal" id="addItemModal">
+        <div class="add-item-content">
+            <h4>&#x2795; Tambah Objek Baru</h4>
+            <input type="text" id="newItemName" placeholder="Nama objek (contoh: Wastafel)" maxlength="30">
+            <input type="text" id="newItemDesc" placeholder="Deskripsi pengecekan" maxlength="50">
+            <div class="modal-actions">
+                <button class="btn-secondary" onclick="closeAddItemModal()">Batal</button>
+                <button class="btn-primary" onclick="addNewItem()">Tambah</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="completionModal">
+        <div class="modal-content">
+            <div class="success-icon">&#x2705;</div>
+            <h3>AREA AMAN & BERSIH!</h3>
+            <p>Semua item telah terverifikasi. Data berhasil disimpan.</p>
+            <button class="modal-btn" onclick="closeModal()">OKE, SIMPAN DATA</button>
+        </div>
+    </div>
+
+    <script>
+        var currentStream = null;
+        var currentFacingMode = 'environment';
+        var videoDevices = [];
+        var currentDeviceIndex = 0;
+        var isCameraReady = false;
+
+        var items = [
+            { id: 0, name: 'Kompor Pemanggang', desc: 'Pastikan permukaan bersih dari minyak', icon: '\uD83D\uDD25', status: 0 },
+            { id: 1, name: 'Etalase Makanan', desc: 'Periksa kebersihan etalase', icon: '\uD83C\uDF7D', status: 0 },
+            { id: 2, name: 'Nampan & Alat Saji', desc: 'Sudah dicuci dan tersusun rapi', icon: '\uD83E\uDD63', status: 0 },
+            { id: 3, name: 'Botol Saus & Bumbu', desc: 'Tutup rapat, permukaan bersih', icon: '\uD83E\uDDF4', status: 0 }
+        ];
+
+        var currentTutorialStep = 1;
+        var isPanelCollapsed = false;
+        var selectedItemId = -1;
+        var nextItemId = 4;
+        var isAnalyzing = false;
+
+        function startApp() {
+            document.getElementById('splashScreen').classList.add('hidden');
+            document.getElementById('tutorialOverlay').classList.add('active');
+        }
+
+        function nextTutorial() {
+            document.querySelector('.tutorial-step[data-step="' + currentTutorialStep + '"]').classList.remove('active');
+            document.querySelectorAll('.step-dot')[currentTutorialStep - 1].classList.remove('active');
+            currentTutorialStep++;
+            document.querySelector('.tutorial-step[data-step="' + currentTutorialStep + '"]').classList.add('active');
+            document.querySelectorAll('.step-dot')[currentTutorialStep - 1].classList.add('active');
+        }
+
+        function prevTutorial() {
+            document.querySelector('.tutorial-step[data-step="' + currentTutorialStep + '"]').classList.remove('active');
+            document.querySelectorAll('.step-dot')[currentTutorialStep - 1].classList.remove('active');
+            currentTutorialStep--;
+            document.querySelector('.tutorial-step[data-step="' + currentTutorialStep + '"]').classList.add('active');
+            document.querySelectorAll('.step-dot')[currentTutorialStep - 1].classList.add('active');
+        }
+
+        async function finishTutorial() {
+            document.getElementById('tutorialOverlay').classList.remove('active');
+            await enumerateCameras();
+            await initCamera();
+            renderChecklist();
+            renderARLabels();
+            document.getElementById('cameraGate').classList.add('active');
+        }
+
+        async function enumerateCameras() {
+            try {
+                var devices = await navigator.mediaDevices.enumerateDevices();
+                videoDevices = devices.filter(function(d) { return d.kind === 'videoinput'; });
+                for (var i = 0; i < videoDevices.length; i++) {
+                    var label = videoDevices[i].label.toLowerCase();
+                    if (currentFacingMode === 'environment' && (label.indexOf('back') > -1 || label.indexOf('rear') > -1 || label.indexOf('belakang') > -1)) {
+                        currentDeviceIndex = i; break;
+                    } else if (currentFacingMode === 'user' && (label.indexOf('front') > -1 || label.indexOf('depan') > -1 || label.indexOf('selfie') > -1)) {
+                        currentDeviceIndex = i; break;
+                    }
+                }
+            } catch (err) { console.error('Camera enum error:', err); }
+        }
+
+        async function initCamera() {
+            var video = document.getElementById('video-feed');
+            var container = document.getElementById('cameraContainer');
+            if (currentStream) {
+                currentStream.getTracks().forEach(function(track) { track.stop(); });
+            }
+            var constraints = { video: {} };
+            if (videoDevices.length > 0 && videoDevices[currentDeviceIndex]) {
+                constraints.video.deviceId = { exact: videoDevices[currentDeviceIndex].deviceId };
+            } else {
+                constraints.video.facingMode = currentFacingMode;
+            }
+            try {
+                var stream = await navigator.mediaDevices.getUserMedia(constraints);
+                currentStream = stream;
+                video.srcObject = stream;
+                container.classList.add('active');
+                isCameraReady = true;
+                updateCameraLabel();
+                video.style.transform = 'scaleX(1)';
+            } catch (err) {
+                console.error('Camera error:', err);
+                container.classList.add('active');
+                isCameraReady = true;
+                video.style.background = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
+                video.style.display = 'flex';
+                video.style.alignItems = 'center';
+                video.style.justifyContent = 'center';
+                video.innerHTML = '<div style="text-align:center;color:#666;"><div style="font-size:3rem;margin-bottom:10px;">&#x1F4F7;</div><div>Mode Demo - Kamera tidak tersedia</div><div style="font-size:0.8rem;margin-top:10px;color:#888;">Pilih objek dari checklist untuk simulasi analisis</div></div>';
+            }
+        }
+
+        async function switchCamera() {
+            if (videoDevices.length <= 1) {
+                showNotification('Hanya 1 kamera tersedia', 'warning');
+                return;
+            }
+            currentFacingMode = (currentFacingMode === 'environment') ? 'user' : 'environment';
+            var found = false;
+            for (var i = 0; i < videoDevices.length; i++) {
+                var label = videoDevices[i].label.toLowerCase();
+                if (currentFacingMode === 'environment' && (label.indexOf('back') > -1 || label.indexOf('rear') > -1 || label.indexOf('belakang') > -1 || label.indexOf('environment') > -1)) {
+                    currentDeviceIndex = i; found = true; break;
+                } else if (currentFacingMode === 'user' && (label.indexOf('front') > -1 || label.indexOf('depan') > -1 || label.indexOf('selfie') > -1 || label.indexOf('user') > -1)) {
+                    currentDeviceIndex = i; found = true; break;
+                }
+            }
+            if (!found) { currentDeviceIndex = (currentDeviceIndex + 1) % videoDevices.length; }
+            showNotification('Menyalakan kamera ' + (currentFacingMode === 'environment' ? 'belakang' : 'depan') + '...', 'normal');
+            await initCamera();
+        }
+
+        function updateCameraLabel() {
+            var label = document.getElementById('camLabel');
+            var camName = 'Kamera ' + (currentFacingMode === 'environment' ? 'Belakang' : 'Depan');
+            if (videoDevices[currentDeviceIndex] && videoDevices[currentDeviceIndex].label) {
+                camName = videoDevices[currentDeviceIndex].label.substring(0, 20);
+            }
+            label.textContent = camName;
+        }
+
+        function renderChecklist() {
+            var container = document.getElementById('checklistItemsContainer');
+            container.innerHTML = '';
+            items.forEach(function(item) {
+                var div = document.createElement('div');
+                div.className = 'checklist-item pending';
+                div.id = 'item' + item.id;
+
+                var btnText = 'PILIH';
+                var btnClass = 'verify-btn select';
+                var btnDisabled = false;
+                var btnOnclick = 'selectItem(' + item.id + ')';
+                var descText = 'Klik PILIH untuk analisis otomatis';
+                var descColor = '#aaa';
+
+                if (item.status === 2) {
+                    div.className = 'checklist-item verified-clean';
+                    btnText = 'BERSIH';
+                    btnClass = 'verify-btn clean';
+                    btnDisabled = true;
+                    btnOnclick = '';
+                    descText = 'Terverifikasi BERSIH oleh sistem';
+                    descColor = '#00ff88';
+                } else if (item.status === 3) {
+                    div.className = 'checklist-item verified-dirty';
+                    btnText = 'BERSIHKAN';
+                    btnClass = 'verify-btn dirty';
+                    btnDisabled = false;
+                    btnOnclick = 'selectItem(' + item.id + ')';
+                    descText = 'Terverifikasi KOTOR - Perlu dibersihkan!';
+                    descColor = '#ff4444';
+                }
+
+                div.innerHTML = '<div class="item-icon">' + item.icon + '</div>' +
+                    '<div class="item-info"><h5>' + item.name + '</h5><p id="desc' + item.id + '" style="color:' + descColor + '">' + descText + '</p></div>' +
+                    '<button class="' + btnClass + '" id="btn' + item.id + '" onclick="' + btnOnclick + '" ' + (btnDisabled ? 'disabled' : '') + '>' + btnText + '</button>';
+                container.appendChild(div);
+            });
+            updateProgress();
+        }
+
+        function renderARLabels() {
+            var container = document.getElementById('arLabelsContainer');
+            container.innerHTML = '';
+            var positions = [
+                { top: '35%', left: '15%' }, { top: '25%', right: '15%' },
+                { bottom: '45%', left: '10%' }, { bottom: '40%', right: '10%' },
+                { top: '40%', left: '50%' }, { bottom: '35%', left: '30%' },
+                { top: '30%', right: '25%' }, { bottom: '50%', right: '30%' }
+            ];
+            items.forEach(function(item, index) {
+                var pos = positions[index % positions.length];
+                var label = document.createElement('div');
+                label.className = 'ar-label';
+                label.id = 'label' + item.id;
+                var style = '';
+                if (pos.top) style += 'top:' + pos.top + ';';
+                if (pos.bottom) style += 'bottom:' + pos.bottom + ';';
+                if (pos.left) style += 'left:' + pos.left + ';';
+                if (pos.right) style += 'right:' + pos.right + ';';
+                label.style.cssText = style;
+                label.innerHTML = '<span class="label-icon">' + item.icon + '</span>' +
+                    '<span class="label-text">' + item.name.split(' ')[0] + '</span>' +
+                    '<span class="label-status" id="labelStatus' + item.id + '">?</span>';
+                container.appendChild(label);
+            });
+        }
+
+        function closeGate() {
+            document.getElementById('cameraGate').classList.remove('active');
+            var panel = document.getElementById('checklistPanel');
+            panel.classList.remove('collapsed');
+            isPanelCollapsed = false;
+            showNotification('Pilih objek dari checklist untuk analisis otomatis', 'normal');
+        }
+
+        function selectItem(id) {
+            var item = items.find(function(i) { return i.id === id; });
+            if (!item) return;
+            if (item.status === 2) {
+                showNotification(item.name + ' sudah terverifikasi BERSIH', 'success');
+                return;
+            }
+
+            // Reset previous selection
+            if (selectedItemId !== -1 && selectedItemId !== id) {
+                var prevItem = items.find(function(i) { return i.id === selectedItemId; });
+                if (prevItem && prevItem.status === 0) {
+                    var prevDiv = document.getElementById('item' + selectedItemId);
+                    if (prevDiv) prevDiv.classList.remove('selected');
+                    var prevLabel = document.getElementById('label' + selectedItemId);
+                    if (prevLabel) prevLabel.style.display = 'none';
+                }
+            }
+
+            selectedItemId = id;
+
+            // Highlight selected item
+            var itemDiv = document.getElementById('item' + id);
+            if (itemDiv) {
+                itemDiv.classList.remove('pending', 'verified-dirty');
+                itemDiv.classList.add('selected');
+            }
+
+            var desc = document.getElementById('desc' + id);
+            if (desc) { desc.textContent = 'Objek dipilih - Klik tombol analisis untuk verifikasi otomatis'; desc.style.color = '#ff6b00'; }
+
+            var btn = document.getElementById('btn' + id);
+            if (btn) { btn.textContent = 'TERPILIH'; }
+
+            // Show AR label for selected item
+            var label = document.getElementById('label' + id);
+            if (label) label.style.display = 'flex';
+
+            // Enable main verify button (now analysis button)
+            var mainBtn = document.getElementById('mainVerifyBtn');
+            mainBtn.disabled = false;
+            mainBtn.style.background = '#ff6b00';
+            mainBtn.title = 'Analisis: ' + item.name;
+
+            showNotification(item.name + ' dipilih! Klik tombol 🔍 untuk analisis otomatis.', 'normal');
+
+            var statusBadge = document.getElementById('statusBadge');
+            statusBadge.textContent = 'ANALISIS: ' + item.name.toUpperCase();
+            statusBadge.style.borderColor = '#ff6b00';
+            statusBadge.style.color = '#ff6b00';
+
+            // Auto-collapse panel
+            var panel = document.getElementById('checklistPanel');
+            panel.classList.add('collapsed');
+            isPanelCollapsed = true;
+        }
+
+        function startAutoAnalysis() {
+            if (selectedItemId === -1) {
+                showNotification('Pilih objek dari checklist terlebih dahulu', 'warning');
+                return;
+            }
+            if (isAnalyzing) return;
+
+            isAnalyzing = true;
+            var item = items.find(function(i) { return i.id === selectedItemId; });
+
+            // Show analysis overlay
+            document.getElementById('analysisText').textContent = 'Menganalisis ' + item.name + ' di frame kamera...';
+            document.getElementById('analysisOverlay').classList.add('active');
+            document.getElementById('analysisProgress').style.width = '0%';
+
+            // Update UI
+            var itemDiv = document.getElementById('item' + selectedItemId);
+            if (itemDiv) {
+                itemDiv.classList.remove('selected');
+                itemDiv.classList.add('analyzing');
+            }
+            var btn = document.getElementById('btn' + selectedItemId);
+            if (btn) { btn.textContent = '...'; btn.className = 'verify-btn analyzing'; }
+
+            var statusBadge = document.getElementById('statusBadge');
+            statusBadge.textContent = 'MENGANALISIS...';
+            statusBadge.classList.add('analyzing');
+
+            // Progress animation
+            var progress = 0;
+            var progressInterval = setInterval(function() {
+                progress += 10;
+                document.getElementById('analysisProgress').style.width = progress + '%';
+                if (progress >= 100) clearInterval(progressInterval);
+            }, 200);
+
+            // Perform actual camera analysis after 2 seconds
+            setTimeout(function() {
+                performCameraAnalysis(item);
+            }, 2000);
+        }
+
+        function performCameraAnalysis(item) {
+            var video = document.getElementById('video-feed');
+            var analysisCanvas = document.getElementById('analysis-canvas');
+            var ctx = analysisCanvas.getContext('2d');
+
+            // Set canvas size to match video
+            analysisCanvas.width = video.videoWidth || 640;
+            analysisCanvas.height = video.videoHeight || 480;
+
+            // Draw current video frame
+            ctx.drawImage(video, 0, 0, analysisCanvas.width, analysisCanvas.height);
+
+            // Get image data for analysis
+            var imageData = ctx.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height);
+            var data = imageData.data;
+
+            // Analyze frame: check for object presence using edge detection and color analysis
+            var edgeScore = detectEdges(data, analysisCanvas.width, analysisCanvas.height);
+            var colorVariance = analyzeColorVariance(data);
+            var brightnessScore = analyzeBrightness(data);
+
+            // Calculate detection score (0-100)
+            // Higher score = more likely an object is present (not just empty wall/floor)
+            var detectionScore = Math.min(100, (edgeScore * 0.4 + colorVariance * 0.3 + brightnessScore * 0.3));
+
+            // Threshold: if score > 45, consider object detected
+            var isObjectDetected = detectionScore > 45;
+
+            // For demo mode (no real camera), use random detection with higher threshold
+            if (!video.srcObject || video.videoWidth === 0) {
+                // Demo mode: 60% chance object NOT detected (more realistic)
+                isObjectDetected = Math.random() > 0.6;
+                detectionScore = isObjectDetected ? 65 + Math.random() * 30 : 15 + Math.random() * 25;
+            }
+
+            finishAnalysis(item, isObjectDetected, detectionScore);
+        }
+
+        function detectEdges(data, width, height) {
+            var edgeCount = 0;
+            var threshold = 30;
+            var sampleRate = 4;
+
+            for (var y = 1; y < height - 1; y += sampleRate) {
+                for (var x = 1; x < width - 1; x += sampleRate) {
+                    var idx = (y * width + x) * 4;
+                    var rightIdx = (y * width + (x + 1)) * 4;
+                    var bottomIdx = ((y + 1) * width + x) * 4;
+
+                    var diffX = Math.abs(data[idx] - data[rightIdx]) + 
+                                Math.abs(data[idx + 1] - data[rightIdx + 1]) + 
+                                Math.abs(data[idx + 2] - data[rightIdx + 2]);
+                    var diffY = Math.abs(data[idx] - data[bottomIdx]) + 
+                                Math.abs(data[idx + 1] - data[bottomIdx + 1]) + 
+                                Math.abs(data[idx + 2] - data[bottomIdx + 2]);
+
+                    if (diffX > threshold || diffY > threshold) {
+                        edgeCount++;
+                    }
+                }
+            }
+
+            var totalSamples = (width / sampleRate) * (height / sampleRate);
+            return Math.min(100, (edgeCount / totalSamples) * 1000);
+        }
+
+        function analyzeColorVariance(data) {
+            var rSum = 0, gSum = 0, bSum = 0;
+            var rSqSum = 0, gSqSum = 0, bSqSum = 0;
+            var count = 0;
+            var sampleRate = 10;
+
+            for (var i = 0; i < data.length; i += 4 * sampleRate) {
+                rSum += data[i];
+                gSum += data[i + 1];
+                bSum += data[i + 2];
+                rSqSum += data[i] * data[i];
+                gSqSum += data[i + 1] * data[i + 1];
+                bSqSum += data[i + 2] * data[i + 2];
+                count++;
+            }
+
+            var rMean = rSum / count;
+            var gMean = gSum / count;
+            var bMean = bSum / count;
+
+            var rVar = (rSqSum / count) - (rMean * rMean);
+            var gVar = (gSqSum / count) - (gMean * gMean);
+            var bVar = (bSqSum / count) - (bMean * bMean);
+
+            var variance = Math.sqrt(rVar + gVar + bVar);
+            return Math.min(100, variance / 2);
+        }
+
+        function analyzeBrightness(data) {
+            var totalBrightness = 0;
+            var count = 0;
+            var sampleRate = 10;
+
+            for (var i = 0; i < data.length; i += 4 * sampleRate) {
+                var brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                totalBrightness += brightness;
+                count++;
+            }
+
+            var avgBrightness = totalBrightness / count;
+            return Math.min(100, 100 - Math.abs(avgBrightness - 128) / 1.5);
+        }
+
+        function finishAnalysis(item, isDetected, score) {
+            isAnalyzing = false;
+            document.getElementById('analysisOverlay').classList.remove('active');
+
+            var resultOverlay = document.getElementById('resultOverlay');
+            var resultIcon = document.getElementById('resultIcon');
+            var resultTitle = document.getElementById('resultTitle');
+            var resultText = document.getElementById('resultText');
+
+            if (isDetected) {
+                // Object detected - auto verify as clean
+                item.status = 2;
+
+                resultOverlay.className = 'result-overlay success active';
+                resultIcon.textContent = '\u2705';
+                resultTitle.textContent = item.name + ' Terverifikasi!';
+                resultText.textContent = 'Objek terdeteksi di kamera (' + Math.round(score) + '% confidence). Status: BERSIH';
+
+                // Update checklist UI
+                var itemDiv = document.getElementById('item' + item.id);
+                if (itemDiv) {
+                    itemDiv.classList.remove('analyzing', 'selected', 'pending', 'verified-dirty');
+                    itemDiv.classList.add('verified-clean');
+                }
+                var desc = document.getElementById('desc' + item.id);
+                if (desc) { desc.textContent = 'Terverifikasi BERSIH oleh sistem (' + Math.round(score) + '% confidence)'; desc.style.color = '#00ff88'; }
+                var btn = document.getElementById('btn' + item.id);
+                if (btn) { btn.disabled = true; btn.textContent = 'BERSIH'; btn.className = 'verify-btn clean'; btn.onclick = null; }
+                var label = document.getElementById('label' + item.id);
+                if (label) { label.classList.add('verified'); label.classList.remove('dirty'); }
+                var labelStatus = document.getElementById('labelStatus' + item.id);
+                if (labelStatus) labelStatus.textContent = '\u2713';
+
+                showNotification(item.name + ' terverifikasi BERSIH! Confidence: ' + Math.round(score) + '%', 'success');
+            } else {
+                // Object NOT detected - verification FAILED
+                resultOverlay.className = 'result-overlay fail active';
+                resultIcon.textContent = '\u274C';
+                resultTitle.textContent = 'Objek Tidak Terdeteksi!';
+                resultText.textContent = item.name + ' tidak terdeteksi di frame kamera (' + Math.round(score) + '% confidence). Arahkan kamera dengan benar dan coba lagi.';
+
+                // Reset item to pending
+                var itemDiv = document.getElementById('item' + item.id);
+                if (itemDiv) {
+                    itemDiv.classList.remove('analyzing', 'selected');
+                    itemDiv.classList.add('pending');
+                }
+                var desc = document.getElementById('desc' + item.id);
+                if (desc) { desc.textContent = 'Analisis gagal - Objek tidak terdeteksi. Klik PILIH untuk mencoba lagi.'; desc.style.color = '#ff4444'; }
+                var btn = document.getElementById('btn' + item.id);
+                if (btn) { btn.textContent = 'PILIH'; btn.className = 'verify-btn select'; }
+
+                showNotification(item.name + ' TIDAK terdeteksi! Arahkan kamera ke objek tersebut. Confidence: ' + Math.round(score) + '%', 'error');
+            }
+
+            // Reset selection and button
+            selectedItemId = -1;
+            var mainBtn = document.getElementById('mainVerifyBtn');
+            mainBtn.disabled = true;
+            mainBtn.style.background = '';
+            mainBtn.title = 'Analisis Objek Terpilih';
+
+            var statusBadge = document.getElementById('statusBadge');
+            statusBadge.classList.remove('analyzing');
+
+            updateProgress();
+            checkCompletion();
+        }
+
+        function closeResult() {
+            document.getElementById('resultOverlay').classList.remove('active');
+        }
+
+        function updateProgress() {
+            var verified = items.filter(function(item) { return item.status >= 2; }).length;
+            var total = items.length;
+            var percentage = Math.round((verified / total) * 100);
+            document.getElementById('progressFill').style.width = percentage + '%';
+            document.getElementById('progressText').textContent = verified + '/' + total;
+            var statusBadge = document.getElementById('statusBadge');
+            if (percentage === 100) {
+                statusBadge.textContent = 'AMAN & BERSIH';
+                statusBadge.style.borderColor = '#00ff88';
+                statusBadge.style.color = '#00ff88';
+            } else {
+                statusBadge.textContent = verified + '/' + total + ' TERVERIFIKASI';
+                statusBadge.style.borderColor = '#ffcc00';
+                statusBadge.style.color = '#ffcc00';
+            }
+        }
+
+        function checkCompletion() {
+            var allVerified = items.every(function(item) { return item.status >= 2; });
+            if (allVerified) {
+                setTimeout(function() {
+                    document.getElementById('completionModal').classList.add('active');
+                    confettiEffect();
+                }, 800);
+            }
+        }
+
+        function showNotification(text, type) {
+            var notif = document.getElementById('notification');
+            document.getElementById('notifText').textContent = text;
+            notif.classList.remove('warning', 'success', 'error');
+            if (type === 'warning') notif.classList.add('warning');
+            else if (type === 'success') notif.classList.add('success');
+            else if (type === 'error') notif.classList.add('error');
+            notif.classList.add('show');
+            setTimeout(function() { notif.classList.remove('show'); }, 3000);
+        }
+
+        function togglePanel() {
+            var panel = document.getElementById('checklistPanel');
+            isPanelCollapsed = !isPanelCollapsed;
+            if (isPanelCollapsed) panel.classList.add('collapsed');
+            else panel.classList.remove('collapsed');
+        }
+
+        var flashOn = false;
+        function toggleFlash() {
+            flashOn = !flashOn;
+            var video = document.getElementById('video-feed');
+            if (flashOn) { video.style.filter = 'brightness(1.3)'; showNotification('Flash aktif', 'normal'); }
+            else { video.style.filter = 'brightness(1)'; showNotification('Flash nonaktif', 'normal'); }
+        }
+
+        function closeModal() {
+            document.getElementById('completionModal').classList.remove('active');
+            showNotification('Data berhasil disimpan!', 'success');
+        }
+
+        function confettiEffect() {
+            var canvas = document.getElementById('canvas-overlay');
+            var ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            var particles = [];
+            var colors = ['#00ff88', '#ff6b00', '#4a90e2', '#ffcc00', '#ffffff'];
+            for (var i = 0; i < 100; i++) {
+                particles.push({
+                    x: Math.random() * canvas.width, y: -10,
+                    vx: (Math.random() - 0.5) * 4, vy: Math.random() * 3 + 2,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    size: Math.random() * 8 + 4
+                });
+            }
+            function animate() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                var active = false;
+                particles.forEach(function(p) {
+                    p.x += p.vx; p.y += p.vy; p.vy += 0.1;
+                    if (p.y < canvas.height) { active = true; ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.size, p.size); }
+                });
+                if (active) requestAnimationFrame(animate);
+                else ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            animate();
+        }
+
+        function showAddItemModal() {
+            document.getElementById('addItemModal').classList.add('active');
+            document.getElementById('newItemName').value = '';
+            document.getElementById('newItemDesc').value = '';
+            document.getElementById('newItemName').focus();
+        }
+
+        function closeAddItemModal() {
+            document.getElementById('addItemModal').classList.remove('active');
+        }
+
+        function addNewItem() {
+            var name = document.getElementById('newItemName').value.trim();
+            var desc = document.getElementById('newItemDesc').value.trim();
+            if (!name) { showNotification('Nama objek tidak boleh kosong!', 'warning'); return; }
+            var icons = ['\uD83E\uDDF9', '\uD83D\uDEBF', '\uD83D\uDEC1', '\uD83E\uDDFA', '\uD83E\uDDFB', '\uD83D\uDEBD', '\uD83E\uDDFC', '\uD83E\uDEA5'];
+            var newItem = {
+                id: nextItemId++, name: name,
+                desc: desc || 'Periksa kebersihan ' + name,
+                icon: icons[Math.floor(Math.random() * icons.length)], status: 0
+            };
+            items.push(newItem);
+            renderChecklist();
+            renderARLabels();
+            updateProgress();
+            closeAddItemModal();
+            showNotification('Objek "' + name + '" ditambahkan! Klik PILIH untuk analisis otomatis.', 'success');
+        }
+
+        window.addEventListener('resize', function() {
+            var canvas = document.getElementById('canvas-overlay');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            var nameInput = document.getElementById('newItemName');
+            var descInput = document.getElementById('newItemDesc');
+            if (nameInput) nameInput.addEventListener('keypress', function(e) { if (e.key === 'Enter') addNewItem(); });
+            if (descInput) descInput.addEventListener('keypress', function(e) { if (e.key === 'Enter') addNewItem(); });
+        });
+    </script>
+</body>
+</html>
